@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Colieya — Connexion</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6fb;margin:0;padding:40px 16px;display:flex;justify-content:center}
+  .card{background:#fff;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.08);padding:32px;max-width:420px;width:100%}
+  h1{color:#1A237E;font-size:20px;margin:0 0 8px}
+  p{color:#555;font-size:14px;line-height:1.5}
+  input{width:100%;padding:12px;margin:8px 0;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box}
+  button{width:100%;padding:13px;background:#1A237E;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;margin-top:8px}
+  button:disabled{opacity:.6;cursor:default}
+  .err{color:#c62828;font-size:13px;margin-top:8px}
+  .ok{color:#2E7D32;font-weight:bold}
+  #loading{color:#888;font-size:13px}
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <p id="loading">Chargement...</p>
+</div>
+<script>
+  const FUNCTIONS_BASE = 'https://hzzmjntnbsthhvexhhjt.supabase.co/functions/v1';
+  const params = new URLSearchParams(window.location.search);
+  const shop = params.get('shop') || '';
+  const card = document.getElementById('card');
+
+  function showForm(errorMsg) {
+    card.innerHTML = `
+      <h1>✅ Boutique connectée !</h1>
+      <p>Reliez maintenant votre compte Colieya pour synchroniser vos commandes automatiquement.</p>
+      <form id="linkForm">
+        <input type="email" id="email" placeholder="Email Colieya" required />
+        <input type="password" id="password" placeholder="Mot de passe" required />
+        <button type="submit" id="submitBtn">Connecter mon compte</button>
+      </form>
+      ${errorMsg ? `<p class="err">${errorMsg}</p>` : ''}
+    `;
+    document.getElementById('linkForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Connexion...';
+      try {
+        const res = await fetch(`${FUNCTIONS_BASE}/shopify-link-account`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shop,
+            email: document.getElementById('email').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showSuccess();
+        } else {
+          showForm(data.error || 'Erreur, veuillez réessayer.');
+        }
+      } catch (err) {
+        showForm('Erreur réseau, veuillez réessayer.');
+      }
+    });
+  }
+
+  function showSuccess() {
+    card.innerHTML = `
+      <h1 class="ok">✅ Tout est prêt !</h1>
+      <p>Vos commandes Shopify seront maintenant importées automatiquement dans Colieya avec le statut « En attente ». Vous pouvez fermer cette page.</p>
+    `;
+  }
+
+  (async () => {
+    if (!shop) {
+      card.innerHTML = '<h1>Erreur</h1><p>Paramètre boutique manquant.</p>';
+      return;
+    }
+    try {
+      const res = await fetch(`${FUNCTIONS_BASE}/shopify-link-account?shop=${encodeURIComponent(shop)}`);
+      const data = await res.json();
+      if (data.linked) {
+        showSuccess();
+      } else {
+        showForm();
+      }
+    } catch (err) {
+      showForm();
+    }
+  })();
+</script>
+</body>
+</html>
