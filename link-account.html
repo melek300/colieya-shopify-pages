@@ -69,7 +69,9 @@
     card.innerHTML = `
       <h1 class="ok">✅ Tout est prêt !</h1>
       <p>Vos commandes Shopify seront maintenant importées automatiquement dans Colieya avec le statut « En attente ». Vous pouvez fermer cette page.</p>
+      <button id="changeBtn">Changer de compte</button>
     `;
+    document.getElementById('changeBtn').addEventListener('click', () => showForm());
   }
 
   (async () => {
