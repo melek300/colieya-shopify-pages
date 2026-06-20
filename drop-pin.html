@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Colieya — Ma position de livraison</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: -apple-system, Segoe UI, Roboto, sans-serif; }
+  #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+  .header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+    background: #1A237E; color: #fff; padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header p { margin: 4px 0 0; font-size: 12px; color: #c5cae9; }
+  .center-pin {
+    position: absolute; top: 50%; left: 50%; z-index: 900;
+    transform: translate(-50%, -100%); pointer-events: none;
+    font-size: 44px; filter: drop-shadow(0 3px 4px rgba(0,0,0,.4));
+  }
+  .panel {
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
+    background: #fff; border-radius: 18px 18px 0 0; padding: 16px;
+    box-shadow: 0 -2px 16px rgba(0,0,0,.15);
+  }
+  .hint { font-size: 13px; color: #555; margin: 0 0 12px; text-align: center; line-height: 1.4; }
+  button {
+    width: 100%; padding: 14px; border: none; border-radius: 12px;
+    font-size: 15px; font-weight: bold; cursor: pointer;
+  }
+  .btn-gps { background: #E8EAF6; color: #1A237E; margin-bottom: 10px; }
+  .btn-confirm { background: #1A237E; color: #fff; }
+  .btn-confirm:disabled { opacity: .5; }
+  .ok-screen {
+    position: absolute; inset: 0; z-index: 2000; background: #f4f6fb;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px; text-align: center;
+  }
+  .ok-screen.show { display: flex; }
+  .ok-screen h1 { color: #2E7D32; font-size: 22px; margin: 0 0 10px; }
+  .ok-screen p { color: #555; font-size: 14px; line-height: 1.5; max-width: 320px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📍 Où doit-on livrer votre colis ?</h1>
+  <p id="sub">Déplacez la carte pour placer le repère sur votre adresse exacte.</p>
+</div>
+
+<div id="map"></div>
+<div class="center-pin">📍</div>
+
+<div class="panel">
+  <p class="hint">Centrez le repère 📍 sur votre porte d'entrée, puis confirmez.</p>
+  <button class="btn-gps" id="gpsBtn">📡 Utiliser ma position actuelle (GPS)</button>
+  <button class="btn-confirm" id="confirmBtn">✅ Confirmer ma position</button>
+</div>
+
+<div class="ok-screen" id="okScreen">
+  <h1>✅ Merci !</h1>
+  <p>Votre position a bien été enregistrée. Le livreur saura exactement où vous trouver. Vous pouvez fermer cette page.</p>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const FUNCTIONS_BASE = 'https://hzzmjntnbsthhvexhhjt.supabase.co/functions/v1';
+  const params = new URLSearchParams(window.location.search);
+  const parcelId = params.get('id') || '';
+
+  // Centre par défaut : Tunis
+  const map = L.map('map', { zoomControl: true }).setView([36.8065, 10.1815], 13);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap'
+  }).addTo(map);
+
+  const confirmBtn = document.getElementById('confirmBtn');
+  const gpsBtn = document.getElementById('gpsBtn');
+  const sub = document.getElementById('sub');
+
+  if (!parcelId) {
+    sub.textContent = 'Lien invalide (colis manquant).';
+    confirmBtn.disabled = true;
+  }
+
+  // Pré-remplir avec le nom/adresse du colis + tenter de centrer
+  (async () => {
+    if (!parcelId) return;
+    try {
+      const res = await fetch(`${FUNCTIONS_BASE}/parcel-location?id=${encodeURIComponent(parcelId)}`);
+      const data = await res.json();
+      if (data && data.found) {
+        if (data.receiver_name) sub.textContent = `Bonjour ${data.receiver_name}, placez le repère sur votre adresse.`;
+        if (data.receiver_lat && data.receiver_lng) {
+          map.setView([data.receiver_lat, data.receiver_lng], 17);
+        }
+      }
+    } catch (e) { /* ignore */ }
+  })();
+
+  gpsBtn.addEventListener('click', () => {
+    if (!navigator.geolocation) { alert("GPS non disponible sur cet appareil."); return; }
+    gpsBtn.textContent = '📡 Localisation...';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        map.setView([pos.coords.latitude, pos.coords.longitude], 18);
+        gpsBtn.textContent = '📡 Utiliser ma position actuelle (GPS)';
+      },
+      () => {
+        gpsBtn.textContent = '📡 Utiliser ma position actuelle (GPS)';
+        alert("Impossible d'obtenir votre position. Placez le repère manuellement.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+
+  confirmBtn.addEventListener('click', async () => {
+    if (!parcelId) return;
+    const c = map.getCenter();
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Enregistrement...';
+    try {
+      const res = await fetch(`${FUNCTIONS_BASE}/parcel-location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: parcelId, lat: c.lat, lng: c.lng }),
+      });
+      const data = await res.json();
+      if (data && data.success) {
+        document.getElementById('okScreen').classList.add('show');
+      } else {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '✅ Confirmer ma position';
+        alert(data.error || 'Erreur, veuillez réessayer.');
+      }
+    } catch (e) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '✅ Confirmer ma position';
+      alert('Erreur réseau, veuillez réessayer.');
+    }
+  });
+</script>
+</body>
+</html>
