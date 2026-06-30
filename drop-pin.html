@@ -42,6 +42,18 @@
   .ok-screen.show { display: flex; }
   .ok-screen h1 { color: #2E7D32; font-size: 22px; margin: 0 0 10px; }
   .ok-screen p { color: #555; font-size: 14px; line-height: 1.5; max-width: 320px; }
+  .loading {
+    position: absolute; inset: 0; z-index: 2500; background: #1A237E; color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px; text-align: center;
+  }
+  .loading.hide { display: none; }
+  .spin {
+    width: 46px; height: 46px; border: 4px solid rgba(255,255,255,.3);
+    border-top-color: #fff; border-radius: 50%; animation: sp 1s linear infinite;
+    margin-bottom: 18px;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -62,6 +74,15 @@
 <div class="ok-screen" id="okScreen">
   <h1>✅ Merci !</h1>
   <p>Votre position a bien été enregistrée. Le livreur saura exactement où vous trouver. Vous pouvez fermer cette page.</p>
+  <button class="btn-gps" id="adjustBtn" style="max-width:300px;margin-top:20px;">🗺️ Position pas exacte ? Ajuster sur la carte</button>
+</div>
+
+<div class="loading" id="loading">
+  <div class="spin"></div>
+  <h2 style="margin:0 0 8px;font-size:18px;">📍 Localisation en cours…</h2>
+  <p style="margin:0;font-size:13px;color:#c5cae9;max-width:300px;line-height:1.5;">
+    Autorisez l'accès à votre position pour enregistrer automatiquement votre adresse de livraison.
+  </p>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -85,21 +106,64 @@
     confirmBtn.disabled = true;
   }
 
-  // Pré-remplir avec le nom/adresse du colis + tenter de centrer
+  const loading = document.getElementById('loading');
+  const okScreen = document.getElementById('okScreen');
+  const adjustBtn = document.getElementById('adjustBtn');
+
+  // Récupère le nom du client (affichage) — sans bloquer.
   (async () => {
     if (!parcelId) return;
     try {
       const res = await fetch(`${FUNCTIONS_BASE}/parcel-location?id=${encodeURIComponent(parcelId)}`);
       const data = await res.json();
-      if (data && data.found) {
-        if (data.receiver_name) sub.textContent = `Bonjour ${data.receiver_name}, placez le repère sur votre adresse.`;
-        if (data.receiver_lat && data.receiver_lng) {
-          map.setView([data.receiver_lat, data.receiver_lng], 17);
-        }
+      if (data && data.found && data.receiver_name) {
+        sub.textContent = `Bonjour ${data.receiver_name}, placez le repère sur votre adresse.`;
       }
     } catch (e) { /* ignore */ }
   })();
 
+  async function savePosition(lat, lng) {
+    const res = await fetch(`${FUNCTIONS_BASE}/parcel-location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: parcelId, lat, lng }),
+    });
+    const data = await res.json();
+    return !!(data && data.success);
+  }
+
+  // Bascule en mode carte (manuel) — fallback si le GPS échoue / est refusé.
+  function showManual(msg) {
+    loading.classList.add('hide');
+    okScreen.classList.remove('show');
+    if (msg) sub.textContent = msg;
+    map.invalidateSize();
+  }
+
+  // ── Étape 1 : tout automatique — on tente le GPS et on enregistre seul ──
+  function autoLocate() {
+    if (!parcelId) { showManual('Lien invalide (colis manquant).'); return; }
+    if (!navigator.geolocation) { showManual('Placez le repère sur votre adresse exacte.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        map.setView([latitude, longitude], 18);
+        try {
+          const ok = await savePosition(latitude, longitude);
+          if (ok) { loading.classList.add('hide'); okScreen.classList.add('show'); }
+          else showManual('Placez le repère sur votre adresse exacte.');
+        } catch (e) { showManual('Placez le repère sur votre adresse exacte.'); }
+      },
+      // refus / échec → on ouvre la carte pour placement manuel
+      () => showManual('Placez le repère 📍 sur votre porte, puis confirmez.'),
+      { enableHighAccuracy: true, timeout: 12000 }
+    );
+  }
+
+  adjustBtn.addEventListener('click', () =>
+    showManual('Ajustez le repère 📍 sur votre porte, puis confirmez.'));
+
+  // ── Étape 2 (manuelle) : bouton GPS + confirmation depuis la carte ──
   gpsBtn.addEventListener('click', () => {
     if (!navigator.geolocation) { alert("GPS non disponible sur cet appareil."); return; }
     gpsBtn.textContent = '📡 Localisation...';
@@ -122,25 +186,21 @@
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Enregistrement...';
     try {
-      const res = await fetch(`${FUNCTIONS_BASE}/parcel-location`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: parcelId, lat: c.lat, lng: c.lng }),
-      });
-      const data = await res.json();
-      if (data && data.success) {
-        document.getElementById('okScreen').classList.add('show');
+      const ok = await savePosition(c.lat, c.lng);
+      if (ok) {
+        okScreen.classList.add('show');
       } else {
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = '✅ Confirmer ma position';
-        alert(data.error || 'Erreur, veuillez réessayer.');
+        alert('Erreur, veuillez réessayer.');
       }
     } catch (e) {
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = '✅ Confirmer ma position';
       alert('Erreur réseau, veuillez réessayer.');
     }
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '✅ Confirmer ma position';
   });
+
+  // Lancer l'auto-localisation au chargement.
+  autoLocate();
 </script>
 </body>
 </html>
