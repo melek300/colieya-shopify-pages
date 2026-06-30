@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Colieya — Ma position de livraison</title>
+<title>Colieya</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
   * { box-sizing: border-box; }
@@ -34,14 +34,30 @@
   .btn-gps { background: #E8EAF6; color: #1A237E; margin-bottom: 10px; }
   .btn-confirm { background: #1A237E; color: #fff; }
   .btn-confirm:disabled { opacity: .5; }
-  .ok-screen {
-    position: absolute; inset: 0; z-index: 2000; background: #f4f6fb;
-    display: none; flex-direction: column; align-items: center; justify-content: center;
-    padding: 32px; text-align: center;
+
+  /* Sélecteur de langue */
+  .langbar { position: absolute; top: 10px; z-index: 3000; display: flex; gap: 6px; }
+  html[dir="rtl"] .langbar { left: 12px; }
+  html[dir="ltr"] .langbar { right: 12px; }
+  .langbar button {
+    width: auto; padding: 6px 10px; font-size: 13px; border-radius: 8px;
+    background: rgba(255,255,255,.9); color: #1A237E; box-shadow: 0 1px 4px rgba(0,0,0,.2);
   }
-  .ok-screen.show { display: flex; }
-  .ok-screen h1 { color: #2E7D32; font-size: 22px; margin: 0 0 10px; }
-  .ok-screen p { color: #555; font-size: 14px; line-height: 1.5; max-width: 320px; }
+  .langbar button.active { background: #2979FF; color: #fff; }
+
+  /* Écran de choix initial */
+  .choice {
+    position: absolute; inset: 0; z-index: 2200; background: #1A237E;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .choice.hide { display: none; }
+  .choice-card {
+    background: #fff; border-radius: 18px; padding: 24px; max-width: 360px; width: 100%;
+    text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.3);
+  }
+  .choice-card .ico { font-size: 46px; }
+  .choice-card h2 { font-size: 18px; color: #1A237E; margin: 10px 0 18px; line-height: 1.4; }
+
   .loading {
     position: absolute; inset: 0; z-index: 2500; background: #1A237E; color: #fff;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -54,35 +70,58 @@
     margin-bottom: 18px;
   }
   @keyframes sp { to { transform: rotate(360deg); } }
+  .ok-screen {
+    position: absolute; inset: 0; z-index: 2600; background: #f4f6fb;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px; text-align: center;
+  }
+  .ok-screen.show { display: flex; }
+  .ok-screen h1 { color: #2E7D32; font-size: 22px; margin: 0 0 10px; }
+  .ok-screen p { color: #555; font-size: 14px; line-height: 1.5; max-width: 320px; }
 </style>
 </head>
 <body>
+
+<div class="langbar">
+  <button data-lang="ar">ع</button>
+  <button data-lang="fr">FR</button>
+  <button data-lang="en">EN</button>
+</div>
+
 <div class="header">
-  <h1>📍 Où doit-on livrer votre colis ?</h1>
-  <p id="sub">Déplacez la carte pour placer le repère sur votre adresse exacte.</p>
+  <h1 id="t-title">📍</h1>
+  <p id="sub"></p>
 </div>
 
 <div id="map"></div>
 <div class="center-pin">📍</div>
 
-<div class="panel">
-  <p class="hint">Centrez le repère 📍 sur votre porte d'entrée, puis confirmez.</p>
-  <button class="btn-gps" id="gpsBtn">📡 Utiliser ma position actuelle (GPS)</button>
-  <button class="btn-confirm" id="confirmBtn">✅ Confirmer ma position</button>
+<div class="panel" id="panel" style="display:none;">
+  <p class="hint" id="t-hint"></p>
+  <button class="btn-gps" id="gpsBtn"></button>
+  <button class="btn-confirm" id="confirmBtn"></button>
+</div>
+
+<!-- Écran de choix : position actuelle OU carte -->
+<div class="choice" id="choiceScreen">
+  <div class="choice-card">
+    <div class="ico">📦</div>
+    <h2 id="t-question"></h2>
+    <button class="btn-confirm" id="useGpsBtn"></button>
+    <button class="btn-gps" id="useMapBtn"></button>
+  </div>
+</div>
+
+<div class="loading hide" id="loading">
+  <div class="spin"></div>
+  <h2 id="t-loading" style="margin:0 0 8px;font-size:18px;"></h2>
+  <p id="t-loadingSub" style="margin:0;font-size:13px;color:#c5cae9;max-width:300px;line-height:1.5;"></p>
 </div>
 
 <div class="ok-screen" id="okScreen">
-  <h1>✅ Merci !</h1>
-  <p>Votre position a bien été enregistrée. Le livreur saura exactement où vous trouver. Vous pouvez fermer cette page.</p>
-  <button class="btn-gps" id="adjustBtn" style="max-width:300px;margin-top:20px;">🗺️ Position pas exacte ? Ajuster sur la carte</button>
-</div>
-
-<div class="loading" id="loading">
-  <div class="spin"></div>
-  <h2 style="margin:0 0 8px;font-size:18px;">📍 Localisation en cours…</h2>
-  <p style="margin:0;font-size:13px;color:#c5cae9;max-width:300px;line-height:1.5;">
-    Autorisez l'accès à votre position pour enregistrer automatiquement votre adresse de livraison.
-  </p>
+  <h1 id="t-okTitle"></h1>
+  <p id="t-okText"></p>
+  <button class="btn-gps" id="adjustBtn" style="max-width:300px;margin-top:20px;"></button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -91,59 +130,137 @@
   const params = new URLSearchParams(window.location.search);
   const parcelId = params.get('id') || '';
 
-  // Centre par défaut : Tunis
+  // ── Traductions (AR par défaut) ──────────────────────────────────────────
+  const I18N = {
+    ar: {
+      dir: 'rtl', title: '📍 وين نوصّلو طردك؟',
+      question: 'تحب نستعملو موقعك الحالي، ولا تختارو من الخريطة؟',
+      useGps: '📍 إيه، استعمل موقعي الحالي',
+      useMap: '🗺️ نختارو من الخريطة',
+      loading: '📍 جاري تحديد موقعك…',
+      loadingSub: 'اسمح بالوصول لموقعك باش نسجّلو تلقائياً.',
+      hint: 'حرّك الخريطة وحطّ 📍 على باب دارك، ثم أكّد.',
+      gps: '📡 استعمل موقعي الحالي (GPS)',
+      confirm: '✅ أكّد موقعي',
+      okTitle: '✅ شكراً!',
+      okText: 'تسجّل موقعك. السائق باش يعرف وين يلقاك بالضبط. تنجّم تسكّر الصفحة.',
+      adjust: '🗺️ الموقع مش مضبوط؟ عدّلو على الخريطة',
+      invalid: 'رابط غير صالح (الطرد ناقص).'
+    },
+    fr: {
+      dir: 'ltr', title: '📍 Où livrer votre colis ?',
+      question: 'Utiliser votre position actuelle, ou choisir sur la carte ?',
+      useGps: '📍 Oui, utiliser ma position',
+      useMap: '🗺️ Choisir sur la carte',
+      loading: '📍 Localisation en cours…',
+      loadingSub: 'Autorisez l\'accès à votre position pour l\'enregistrer automatiquement.',
+      hint: 'Centrez le repère 📍 sur votre porte, puis confirmez.',
+      gps: '📡 Utiliser ma position actuelle (GPS)',
+      confirm: '✅ Confirmer ma position',
+      okTitle: '✅ Merci !',
+      okText: 'Votre position a été enregistrée. Le livreur saura où vous trouver. Vous pouvez fermer cette page.',
+      adjust: '🗺️ Position pas exacte ? Ajuster sur la carte',
+      invalid: 'Lien invalide (colis manquant).'
+    },
+    en: {
+      dir: 'ltr', title: '📍 Where to deliver your parcel?',
+      question: 'Use your current location, or pick on the map?',
+      useGps: '📍 Yes, use my location',
+      useMap: '🗺️ Choose on the map',
+      loading: '📍 Locating…',
+      loadingSub: 'Allow location access to save it automatically.',
+      hint: 'Center the pin 📍 on your door, then confirm.',
+      gps: '📡 Use my current location (GPS)',
+      confirm: '✅ Confirm my location',
+      okTitle: '✅ Thank you!',
+      okText: 'Your location has been saved. The courier will know where to find you. You can close this page.',
+      adjust: '🗺️ Not exact? Adjust on the map'
+    }
+  };
+
+  let clientName = '';
+  let lang = 'ar';
+
+  function t(k){ return (I18N[lang] && I18N[lang][k]) || I18N.fr[k] || ''; }
+
+  function applyLang(l){
+    lang = l;
+    const d = I18N[l].dir;
+    document.documentElement.setAttribute('lang', l);
+    document.documentElement.setAttribute('dir', d);
+    document.getElementById('t-title').textContent = t('title');
+    document.getElementById('t-question').textContent = t('question');
+    document.getElementById('useGpsBtn').textContent = t('useGps');
+    document.getElementById('useMapBtn').textContent = t('useMap');
+    document.getElementById('t-loading').textContent = t('loading');
+    document.getElementById('t-loadingSub').textContent = t('loadingSub');
+    document.getElementById('t-hint').textContent = t('hint');
+    document.getElementById('gpsBtn').textContent = t('gps');
+    document.getElementById('confirmBtn').textContent = t('confirm');
+    document.getElementById('t-okTitle').textContent = t('okTitle');
+    document.getElementById('t-okText').textContent = t('okText');
+    document.getElementById('adjustBtn').textContent = t('adjust');
+    // sous-titre (avec nom du client si dispo)
+    updateSub();
+    document.querySelectorAll('.langbar button').forEach(b =>
+      b.classList.toggle('active', b.dataset.lang === l));
+  }
+
+  function updateSub(){
+    const sub = document.getElementById('sub');
+    if (!parcelId) { sub.textContent = t('invalid'); return; }
+    if (clientName) {
+      sub.textContent = lang === 'ar'
+        ? `مرحبا ${clientName} 👋`
+        : (lang === 'en' ? `Hello ${clientName} 👋` : `Bonjour ${clientName} 👋`);
+    } else sub.textContent = '';
+  }
+
+  // Carte
   const map = L.map('map', { zoomControl: true }).setView([36.8065, 10.1815], 13);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap'
   }).addTo(map);
 
-  const confirmBtn = document.getElementById('confirmBtn');
-  const gpsBtn = document.getElementById('gpsBtn');
-  const sub = document.getElementById('sub');
-
-  if (!parcelId) {
-    sub.textContent = 'Lien invalide (colis manquant).';
-    confirmBtn.disabled = true;
-  }
-
+  const choiceScreen = document.getElementById('choiceScreen');
   const loading = document.getElementById('loading');
   const okScreen = document.getElementById('okScreen');
-  const adjustBtn = document.getElementById('adjustBtn');
+  const panel = document.getElementById('panel');
+  const confirmBtn = document.getElementById('confirmBtn');
 
-  // Récupère le nom du client (affichage) — sans bloquer.
+  // Récupère le nom du client (affichage)
   (async () => {
     if (!parcelId) return;
     try {
       const res = await fetch(`${FUNCTIONS_BASE}/parcel-location?id=${encodeURIComponent(parcelId)}`);
       const data = await res.json();
-      if (data && data.found && data.receiver_name) {
-        sub.textContent = `Bonjour ${data.receiver_name}, placez le repère sur votre adresse.`;
-      }
-    } catch (e) { /* ignore */ }
+      if (data && data.found && data.receiver_name) { clientName = data.receiver_name; updateSub(); }
+    } catch (e) {}
   })();
 
-  async function savePosition(lat, lng) {
+  async function savePosition(lat, lng){
     const res = await fetch(`${FUNCTIONS_BASE}/parcel-location`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: parcelId, lat, lng }),
     });
     const data = await res.json();
     return !!(data && data.success);
   }
 
-  // Bascule en mode carte (manuel) — fallback si le GPS échoue / est refusé.
-  function showManual(msg) {
+  function showMap(){
+    choiceScreen.classList.add('hide');
     loading.classList.add('hide');
     okScreen.classList.remove('show');
-    if (msg) sub.textContent = msg;
+    panel.style.display = 'block';
     map.invalidateSize();
   }
 
-  // ── Étape 1 : tout automatique — on tente le GPS et on enregistre seul ──
-  function autoLocate() {
-    if (!parcelId) { showManual('Lien invalide (colis manquant).'); return; }
-    if (!navigator.geolocation) { showManual('Placez le repère sur votre adresse exacte.'); return; }
+  // Choix 1 : position actuelle (GPS automatique + enregistrement)
+  document.getElementById('useGpsBtn').addEventListener('click', () => {
+    if (!parcelId) { alert(t('invalid')); return; }
+    choiceScreen.classList.add('hide');
+    loading.classList.remove('hide');
+    if (!navigator.geolocation) { showMap(); return; }
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
@@ -151,56 +268,46 @@
         try {
           const ok = await savePosition(latitude, longitude);
           if (ok) { loading.classList.add('hide'); okScreen.classList.add('show'); }
-          else showManual('Placez le repère sur votre adresse exacte.');
-        } catch (e) { showManual('Placez le repère sur votre adresse exacte.'); }
+          else showMap();
+        } catch (e) { showMap(); }
       },
-      // refus / échec → on ouvre la carte pour placement manuel
-      () => showManual('Placez le repère 📍 sur votre porte, puis confirmez.'),
+      () => showMap(),
       { enableHighAccuracy: true, timeout: 12000 }
     );
-  }
+  });
 
-  adjustBtn.addEventListener('click', () =>
-    showManual('Ajustez le repère 📍 sur votre porte, puis confirmez.'));
+  // Choix 2 : carte (manuel)
+  document.getElementById('useMapBtn').addEventListener('click', showMap);
+  document.getElementById('adjustBtn').addEventListener('click', showMap);
 
-  // ── Étape 2 (manuelle) : bouton GPS + confirmation depuis la carte ──
-  gpsBtn.addEventListener('click', () => {
-    if (!navigator.geolocation) { alert("GPS non disponible sur cet appareil."); return; }
-    gpsBtn.textContent = '📡 Localisation...';
+  // Bouton GPS dans le panneau manuel
+  document.getElementById('gpsBtn').addEventListener('click', () => {
+    if (!navigator.geolocation) { alert('GPS ✗'); return; }
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        map.setView([pos.coords.latitude, pos.coords.longitude], 18);
-        gpsBtn.textContent = '📡 Utiliser ma position actuelle (GPS)';
-      },
-      () => {
-        gpsBtn.textContent = '📡 Utiliser ma position actuelle (GPS)';
-        alert("Impossible d'obtenir votre position. Placez le repère manuellement.");
-      },
+      (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], 18),
+      () => alert('GPS ✗'),
       { enableHighAccuracy: true, timeout: 10000 }
     );
   });
 
+  // Confirmation depuis la carte
   confirmBtn.addEventListener('click', async () => {
     if (!parcelId) return;
     const c = map.getCenter();
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Enregistrement...';
     try {
       const ok = await savePosition(c.lat, c.lng);
-      if (ok) {
-        okScreen.classList.add('show');
-      } else {
-        alert('Erreur, veuillez réessayer.');
-      }
-    } catch (e) {
-      alert('Erreur réseau, veuillez réessayer.');
-    }
+      if (ok) okScreen.classList.add('show');
+      else alert('✗');
+    } catch (e) { alert('✗'); }
     confirmBtn.disabled = false;
-    confirmBtn.textContent = '✅ Confirmer ma position';
   });
 
-  // Lancer l'auto-localisation au chargement.
-  autoLocate();
+  // Sélecteur de langue
+  document.querySelectorAll('.langbar button').forEach(b =>
+    b.addEventListener('click', () => applyLang(b.dataset.lang)));
+
+  applyLang('ar'); // langue par défaut : arabe
 </script>
 </body>
 </html>
