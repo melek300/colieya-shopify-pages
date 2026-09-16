@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Suivi de colis — COLIEYA</title>
+<style>
+  :root{
+    --bleu:#1A237E; --bleu2:#2979FF; --or:#FFD700;
+    --vert:#2E7D32; --orange:#F57F17; --rouge:#C62828;
+    --gris:#6b7280; --fond:#F4F6FB; --carte:#fff; --bord:#e5e7eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--fond);color:#111827;
+       font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{background:linear-gradient(135deg,var(--bleu),var(--bleu2));
+         color:#fff;padding:26px 20px 30px;text-align:center}
+  header .marque{color:var(--or);font-size:26px;font-weight:800;letter-spacing:2px}
+  header .code{opacity:.85;font-size:13px;margin-top:6px;font-family:ui-monospace,monospace}
+  main{max-width:520px;margin:-18px auto 40px;padding:0 16px}
+  .carte{background:var(--carte);border:1px solid var(--bord);border-radius:16px;
+         padding:18px;margin-bottom:14px}
+  .etat{font-size:19px;font-weight:700;margin:0 0 4px}
+  .sous{color:var(--gris);font-size:13px;margin:0}
+
+  /* frise */
+  .frise{display:flex;margin:22px 0 4px}
+  .pas{flex:1;text-align:center;position:relative}
+  .pas .rond{width:30px;height:30px;border-radius:50%;background:#d1d5db;color:#fff;
+             display:flex;align-items:center;justify-content:center;margin:0 auto 7px;
+             font-size:15px;position:relative;z-index:1}
+  .pas.ok .rond{background:var(--vert)}
+  .pas.ici .rond{background:var(--bleu2);box-shadow:0 0 0 5px rgba(41,121,255,.22)}
+  .pas .lib{font-size:11px;color:var(--gris)}
+  .pas.ok .lib,.pas.ici .lib{color:#111827;font-weight:600}
+  .pas:not(:last-child)::after{content:"";position:absolute;top:15px;left:50%;
+             width:100%;height:3px;background:#d1d5db}
+  .pas.ok:not(:last-child)::after{background:var(--vert)}
+
+  .ligne{display:flex;justify-content:space-between;gap:12px;
+         padding:11px 0;border-top:1px solid var(--bord)}
+  .ligne:first-of-type{border-top:0}
+  .ligne .k{color:var(--gris);font-size:13px}
+  .ligne .v{font-weight:600;text-align:right}
+  .eta{background:rgba(41,121,255,.09);border:1px solid rgba(41,121,255,.3);
+       border-radius:12px;padding:13px;text-align:center;margin-top:14px}
+  .eta .h{font-size:25px;font-weight:800;color:var(--bleu)}
+  .eta .l{font-size:12px;color:var(--gris)}
+  #carte{height:230px;border-radius:12px;margin-top:14px;display:none;
+         border:1px solid var(--bord)}
+
+  .app{background:linear-gradient(135deg,var(--bleu),var(--bleu2));color:#fff;
+       border-radius:16px;padding:18px;text-align:center}
+  .app h3{margin:0 0 6px;font-size:16px}
+  .app p{margin:0 0 13px;font-size:13px;opacity:.9}
+  .app a{display:block;background:#fff;color:var(--bleu);text-decoration:none;
+         font-weight:700;padding:12px;border-radius:11px}
+  .msg{text-align:center;padding:40px 20px;color:var(--gris)}
+  .ar{direction:rtl;text-align:right}
+  footer{text-align:center;color:var(--gris);font-size:11px;padding:0 0 26px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="marque">COLIEYA</div>
+  <div class="code" id="code"></div>
+</header>
+
+<main id="contenu">
+  <div class="msg">Chargement…</div>
+</main>
+
+<footer>COLIEYA — suivi de livraison</footer>
+
+<script>
+const ENDPOINT = "https://hzzmjntnbsthhvexhhjt.supabase.co/functions/v1/track";
+const LIEN_APP = "https://colieya.tn";
+
+const ETAPES = [
+  { cle: "au_depot",  fr: "Au dépôt",  ar: "فـ الدepot",  ico: "📦" },
+  { cle: "en_cours",  fr: "En route",  ar: "فـ الطريق",   ico: "🚚" },
+  { cle: "livree",    fr: "Livré",     ar: "توصّل",       ico: "✓"  },
+];
+
+const TITRES = {
+  en_attente: ["Colis enregistré",     "طردك تسجّل"],
+  au_depot:   ["Au dépôt",             "فـ الدepot"],
+  en_cours:   ["En cours de livraison","الليفرور فـ الطريق"],
+  livree:     ["Colis livré",          "طردك توصّل"],
+  retour:     ["Retour à l'expéditeur","رجع للتاجر"],
+  a_verifier: ["Vérification en cours","فمّا حاجة تتأكّد"],
+};
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+function heure(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function frise(etape) {
+  const i = ETAPES.findIndex(e => e.cle === etape);
+  // Retour et vérification sortent du parcours normal : pas de frise.
+  if (i < 0) return "";
+  return `<div class="frise">${ETAPES.map((e, j) => {
+    const cls = j < i ? "ok" : (j === i ? "ici" : "");
+    return `<div class="pas ${cls}">
+      <div class="rond">${e.ico}</div><div class="lib">${e.fr}</div></div>`;
+  }).join("")}</div>`;
+}
+
+function ligne(k, v) {
+  return v ? `<div class="ligne"><span class="k">${esc(k)}</span>
+              <span class="v">${esc(v)}</span></div>` : "";
+}
+
+function rendre(d) {
+  document.getElementById("code").textContent = d.barcode ?? "";
+  const [fr, ar] = TITRES[d.etape] ?? TITRES.en_attente;
+  const h = heure(d.eta);
+
+  document.getElementById("contenu").innerHTML = `
+    <div class="carte">
+      <p class="etat">${esc(fr)}</p>
+      <p class="sous ar">${esc(ar)}</p>
+      ${frise(d.etape)}
+      ${h && d.etape === "en_cours" ? `
+        <div class="eta">
+          <div class="h">${esc(h)}</div>
+          <div class="l">Arrivée estimée${d.rang ? ` — ${d.rang}ᵉ arrêt` : ""}</div>
+        </div>` : ""}
+      ${d.livreur ? `<div id="carte"></div>` : ""}
+    </div>
+
+    <div class="carte">
+      ${ligne("Destinataire", d.destinataire)}
+      ${ligne("Zone", d.zone)}
+      ${ligne("Boutique", d.boutique)}
+    </div>
+
+    <div class="app">
+      <h3>Suivez en direct avec l'application</h3>
+      <p>Position du livreur sur la carte, notifications, adresse enregistrée
+         une fois pour toutes.<br>
+         <span class="ar">موقع الليفرور مباشرة، تنبيهات، وعنوانك يتحفظ.</span></p>
+      <a href="${LIEN_APP}">Télécharger COLIEYA</a>
+    </div>`;
+
+  if (d.livreur) carteLivreur(d.livreur);
+}
+
+function carteLivreur(l) {
+  const el = document.getElementById("carte");
+  if (!el) return;
+  el.style.display = "block";
+  // OpenStreetMap en iframe : pas de clé d'API, pas de script tiers.
+  const dx = 0.012;
+  el.innerHTML = `<iframe style="width:100%;height:100%;border:0;border-radius:12px"
+    loading="lazy" referrerpolicy="no-referrer"
+    src="https://www.openstreetmap.org/export/embed.html?bbox=${l.lng-dx}%2C${l.lat-dx}%2C${l.lng+dx}%2C${l.lat+dx}&layer=mapnik&marker=${l.lat}%2C${l.lng}"></iframe>`;
+}
+
+async function charger() {
+  const t = new URLSearchParams(location.search).get("t");
+  const zone = document.getElementById("contenu");
+  if (!t) {
+    zone.innerHTML = `<div class="msg">Lien incomplet.<br>
+      <span class="ar">الرابط ناقص.</span></div>`;
+    return;
+  }
+  try {
+    const r = await fetch(`${ENDPOINT}?t=${encodeURIComponent(t)}`);
+    if (r.status === 404) {
+      zone.innerHTML = `<div class="msg">Colis introuvable.<br>
+        <span class="ar">الطرد ما لقيناهش.</span></div>`;
+      return;
+    }
+    if (!r.ok) throw new Error(r.status);
+    rendre(await r.json());
+  } catch (e) {
+    zone.innerHTML = `<div class="msg">Suivi momentanément indisponible.<br>
+      <span class="ar">التتبّع موش متوفّر توّة.</span></div>`;
+  }
+}
+
+charger();
+// Le livreur bouge : on rafraîchit tant que l'onglet est visible.
+setInterval(() => { if (!document.hidden) charger(); }, 30000);
+</script>
+</body>
+</html>
