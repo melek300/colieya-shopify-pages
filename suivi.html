@@ -55,6 +55,8 @@
   .app p{margin:0 0 13px;font-size:13px;opacity:.9}
   .app a{display:block;background:#fff;color:var(--bleu);text-decoration:none;
          font-weight:700;padding:12px;border-radius:11px}
+  .pin{display:block;background:var(--vert);color:#fff;text-decoration:none;
+       font-weight:700;padding:13px;border-radius:11px}
   .msg{text-align:center;padding:40px 20px;color:var(--gris)}
   .ar{direction:rtl;text-align:right}
   footer{text-align:center;color:var(--gris);font-size:11px;padding:0 0 26px}
@@ -142,6 +144,16 @@ function rendre(d) {
       ${ligne("Boutique", d.boutique)}
     </div>
 
+    <div class="carte" style="text-align:center">
+      <p class="sous" style="margin-bottom:12px">
+        L'adresse n'est pas exacte ?<br>
+        <span class="ar">العنوان ماهوش مضبوط ؟</span>
+      </p>
+      <a class="pin" href="drop-pin.html?t=${encodeURIComponent(jeton)}">
+        📍 Placer ma position sur la carte
+      </a>
+    </div>
+
     <div class="app">
       <h3>Suivez en direct avec l'application</h3>
       <p>Position du livreur sur la carte, notifications, adresse enregistrée
@@ -164,8 +176,11 @@ function carteLivreur(l) {
     src="https://www.openstreetmap.org/export/embed.html?bbox=${l.lng-dx}%2C${l.lat-dx}%2C${l.lng+dx}%2C${l.lat+dx}&layer=mapnik&marker=${l.lat}%2C${l.lng}"></iframe>`;
 }
 
+let jeton = "";
+
 async function charger() {
   const t = new URLSearchParams(location.search).get("t");
+  jeton = t || "";
   const zone = document.getElementById("contenu");
   if (!t) {
     zone.innerHTML = `<div class="msg">Lien incomplet.<br>
