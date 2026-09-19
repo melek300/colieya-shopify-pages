@@ -128,7 +128,12 @@
 <script>
   const FUNCTIONS_BASE = 'https://hzzmjntnbsthhvexhhjt.supabase.co/functions/v1';
   const params = new URLSearchParams(window.location.search);
+  // Le jeton est ce que le destinataire reçoit par SMS ; l'identifiant reste
+  // accepté pour les liens déjà distribués.
+  const jeton = params.get('t') || '';
   const parcelId = params.get('id') || '';
+  const cle = jeton ? `t=${encodeURIComponent(jeton)}` : `id=${encodeURIComponent(parcelId)}`;
+  const corpsCle = jeton ? { t: jeton } : { id: parcelId };
 
   // ── Traductions (AR par défaut) ──────────────────────────────────────────
   const I18N = {
@@ -208,7 +213,7 @@
 
   function updateSub(){
     const sub = document.getElementById('sub');
-    if (!parcelId) { sub.textContent = t('invalid'); return; }
+    if (!jeton && !parcelId) { sub.textContent = t('invalid'); return; }
     if (clientName) {
       sub.textContent = lang === 'ar'
         ? `مرحبا ${clientName} 👋`
@@ -230,9 +235,9 @@
 
   // Récupère le nom du client (affichage)
   (async () => {
-    if (!parcelId) return;
+    if (!jeton && !parcelId) return;
     try {
-      const res = await fetch(`${FUNCTIONS_BASE}/parcel-location?id=${encodeURIComponent(parcelId)}`);
+      const res = await fetch(`${FUNCTIONS_BASE}/parcel-location?${cle}`);
       const data = await res.json();
       if (data && data.found && data.receiver_name) { clientName = data.receiver_name; updateSub(); }
     } catch (e) {}
@@ -241,7 +246,7 @@
   async function savePosition(lat, lng){
     const res = await fetch(`${FUNCTIONS_BASE}/parcel-location`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: parcelId, lat, lng }),
+      body: JSON.stringify({ ...corpsCle, lat, lng }),
     });
     const data = await res.json();
     return !!(data && data.success);
@@ -257,7 +262,7 @@
 
   // Choix 1 : position actuelle (GPS automatique + enregistrement)
   document.getElementById('useGpsBtn').addEventListener('click', () => {
-    if (!parcelId) { alert(t('invalid')); return; }
+    if (!jeton && !parcelId) { alert(t('invalid')); return; }
     choiceScreen.classList.add('hide');
     loading.classList.remove('hide');
     if (!navigator.geolocation) { showMap(); return; }
@@ -292,7 +297,7 @@
 
   // Confirmation depuis la carte
   confirmBtn.addEventListener('click', async () => {
-    if (!parcelId) return;
+    if (!jeton && !parcelId) return;
     const c = map.getCenter();
     confirmBtn.disabled = true;
     try {
